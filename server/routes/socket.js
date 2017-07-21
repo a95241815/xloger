@@ -15,18 +15,19 @@ class SocketReader extends Stream.Readable {
 
 
 function writeSocket(socket, data, callback){
-	socket.write( JSON.stringify(data)+"\n", "utf-8", callback );
+	console.log(data)
+	socket.write( JSON.stringify(data)+"\n", "utf-8" );
 }
 
 
 function threadCheckin(socket, data){
 	var accepted = filterMgr.detect(data);
-	serverRegister(socket.remoteAddress, data.host);
+	addReportor(socket.remoteAddress, data.host);
 	writeSocket(socket, {accepted: accepted, ip:socket.remoteAddress});
 }
 
 
-function serverRegister(ip, host){
+function addReportor(ip, host){
 	var reportors = ncache.get("reportors")||{};
 
     var server = reportors[ip];
@@ -44,6 +45,11 @@ function serverRegister(ip, host){
 }
 
 
+function register(socket, data){
+	if(data.reciever){ socket.reciever = true; }
+	addReportor(socket.remoteAddress, data.host);
+	sendFilter(socket, get_filters())
+}
 
 // 消息调度
 function messageDispatcher(socket, message){
@@ -56,7 +62,7 @@ function messageDispatcher(socket, message){
 		case "checkin":
 			return threadCheckin(socket, data);
 		case "register":
-			return serverRegister(socket, data);
+			return register(socket, data);
 		case "trace":
 			return webPublish("log", data);
 		default:
@@ -67,6 +73,42 @@ function messageDispatcher(socket, message){
 // 缓存sockets连接
 var socketQueue = [];
 var sockets = {};
+
+
+function get_filters(){
+	var filters=[], kfilters = filterMgr.list();
+	for(var fid in kfilters){
+		filters.push(kfilters[fid]);
+	}
+	return filters;
+}
+
+function broadcastFilter(){
+	for(var sid in sockets){
+		if(sockets[sid].reciever){
+			sendFilter(sockets[sid], get_filters());
+		}
+	}	
+}
+
+function sendFilter(socket, filters){
+	var serverMention= false;
+	filters.forEach(function(f, i){
+		if(f.serverIP){
+			var exp = f.serverIP.replace(".", '\.').replace("*", ".*").replace("/", "\/");
+			var re = new RegExp(exp, "i");
+			if( re.test( socket.remoteAddress) ){
+				serverMention = true;
+				return;
+			}
+		}
+	});
+	var data = {
+		list: filters,
+		server_mention: serverMention
+	};
+	writeSocket(socket, {action:"filter", data:data});
+}
 
 
 function unisockid(){
@@ -148,7 +190,7 @@ function subscribe(){
 	console.log('XLoger Socket listening at %s:%s', host, port);
 }
 
-
+module.exports.broadcastFilter = broadcastFilter;
 module.exports.subscribe = subscribe;
 module.exports.socketMessage = function(sockid, msgstr){
 	var socket = sockets[sockid];

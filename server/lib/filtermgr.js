@@ -4,6 +4,7 @@
 var cookie = require('cookie');
 var ncache = global.ncache;
 var filterids = [];
+var filters = {};
 
 function updateAll(){
     filterids = []; // 全局filter
@@ -17,13 +18,23 @@ function updateAll(){
 /**
  * update and apply the filter which a web-socket client seted.
  */
-function update(websocket){
+function update(websocket, filter){
 	var sid 	= websocket.id
 	,	filter 	= websocket.handshake.filter;
 	ncache.set("filter:"+sid, filter, 600);
 	if(filterids.indexOf(sid) < 0 ){
 		filterids.push(sid);
 	}
+	global.socket.broadcastFilter()
+}
+
+
+function list(){
+	var nkeys = [];
+	filterids.forEach(function(sid, i){
+		nkeys.push("filter:"+sid);
+	})
+	return ncache.mget(nkeys);
 }
 
 
@@ -143,5 +154,6 @@ module.exports = {
 	update: update,
 	get: get,
 	detect: detect,
-	remove: remove
+	remove: remove,
+	list: list
 };
